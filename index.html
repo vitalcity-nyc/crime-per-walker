@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Crime per walker, not crime per resident</title>
+<link rel="stylesheet" href="https://use.typekit.net/qqk2vto.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"/>
+<style>
+  :root{
+    --chartreuse:#dde44c; --orange:#ff7c53; --magenta:#e7466d;
+    --cerulean:#217ebe; --charcoal:#707175; --ink:#1b1b1b;
+    --paper:#fafaf7; --rule:#e7e6df; --cloud:#eceade;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);
+    font-family:"halyard-text",Inter,system-ui,sans-serif;font-weight:300;
+    overflow-x:hidden;}
+  .frame{max-width:640px;margin:0 auto;padding:18px 0 20px;}
+  .eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    font-weight:700;color:var(--magenta);margin:0 0 6px;}
+  h1{font-family:"halyard-text",Inter,sans-serif;font-weight:900;
+    font-size:28px;line-height:1.08;letter-spacing:-0.01em;margin:0 0 8px;}
+  h1 em{font-style:normal;color:var(--magenta);}
+  .dek{font-size:14px;line-height:1.5;color:#2c2c2c;font-weight:300;
+    margin:0 0 12px;}
+  .dek b{font-weight:700;}
+
+  .ctrls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;
+    padding:8px 10px;border:1px solid var(--rule);border-radius:3px;
+    background:#fff;margin-bottom:8px;}
+  .ctrls .grp{display:flex;align-items:center;gap:6px;}
+  .ctrls .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    font-weight:700;color:var(--charcoal);}
+  .seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;
+    overflow:hidden;}
+  .seg button{border:0;background:#fff;padding:5px 9px;
+    font:inherit;font-size:11px;font-weight:700;color:var(--ink);
+    cursor:pointer;border-right:1px solid var(--rule);line-height:1.2;}
+  .seg button:last-child{border-right:0;}
+  .seg button.on{background:var(--ink);color:#fff;}
+  .seg button:hover:not(.on){background:#f2f1ea;}
+
+  .map-wrap{position:relative;border:1px solid var(--rule);border-radius:3px;
+    overflow:hidden;background:#fff;}
+  #map{width:100%;height:520px;}
+  @media (max-width:520px){ #map{height:420px;} h1{font-size:24px;} }
+  .maplibregl-canvas{outline:none;}
+  .maplibregl-ctrl-attrib{font-size:10px;}
+
+  .fs-btn{position:absolute;top:8px;right:8px;z-index:12;background:#fff;
+    border:1px solid var(--rule);border-radius:3px;padding:5px 9px;
+    font:inherit;font-size:11px;font-weight:700;color:var(--ink);cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;}
+  .fs-btn:hover{background:#f2f1ea;}
+
+  .fs-title{display:none;position:absolute;top:10px;left:12px;z-index:11;
+    background:#fff;border:1px solid var(--rule);border-radius:3px;
+    padding:9px 12px;max-width:340px;}
+  .fs-title .fs-eyebrow{font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;font-weight:700;color:var(--magenta);margin:0 0 3px;}
+  .fs-title .fs-head{font-family:"halyard-text",Inter,sans-serif;
+    font-weight:900;font-size:14px;letter-spacing:-0.01em;
+    line-height:1.15;margin:0 0 4px;}
+  .fs-title .fs-sum{font-size:11px;line-height:1.4;color:#2c2c2c;margin:0;}
+  .fs-title .fs-sum b{font-weight:700;}
+  .fs-title .fs-src{font-size:10.5px;line-height:1.35;color:var(--charcoal);
+    margin:6px 0 0;padding-top:6px;border-top:1px solid var(--rule);}
+  .fs-title .fs-src a{color:var(--charcoal);text-decoration:underline;}
+
+  :fullscreen .readout, .fs-mode .readout{
+    top:auto;left:auto;bottom:18px;right:18px;
+    min-width:240px;padding:10px 14px;
+    box-shadow:0 4px 16px rgba(0,0,0,.12);}
+  :fullscreen, .fs-mode{background:var(--paper);}
+  :fullscreen .frame, .fs-mode .frame{
+    max-width:none;width:100vw;height:100vh;padding:0;
+    display:flex;flex-direction:column;}
+  :fullscreen .eyebrow, :fullscreen h1, :fullscreen .dek,
+  :fullscreen .stat-row, :fullscreen footer,
+  .fs-mode .eyebrow, .fs-mode h1, .fs-mode .dek,
+  .fs-mode .stat-row, .fs-mode footer{display:none;}
+  :fullscreen .ctrls, .fs-mode .ctrls{
+    margin:0;border-radius:0;border:0;border-bottom:1px solid var(--rule);
+    padding:10px 14px;}
+  :fullscreen .map-wrap, .fs-mode .map-wrap{flex:1;border-radius:0;border:0;}
+  :fullscreen #map, .fs-mode #map{height:100%;}
+  :fullscreen .legend, .fs-mode .legend{
+    position:absolute;bottom:10px;left:12px;z-index:11;background:#fff;
+    border:1px solid var(--rule);padding:6px 10px;border-radius:3px;margin:0;}
+  :fullscreen .fs-title, .fs-mode .fs-title{display:block;}
+
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;
+    margin:8px 0 0;font-size:11px;color:var(--charcoal);}
+  .legend .swatches{display:flex;gap:1px;}
+  .legend .sw{width:26px;height:12px;}
+  .legend .ticks{display:flex;font-size:9.5px;font-weight:600;color:var(--charcoal);}
+  .legend .ticks span{width:27px;text-align:left;}
+  .legend .note{color:var(--charcoal);font-style:italic;font-size:11px;}
+  .legend .ttl{font-weight:700;color:var(--ink);font-size:10.5px;
+    text-transform:uppercase;letter-spacing:.08em;}
+
+  .stat-row{display:grid;grid-template-columns:repeat(2,1fr);
+    gap:6px;margin:22px 0 4px;}
+  .stat{border:1px solid var(--rule);border-radius:3px;padding:7px 10px;background:#fff;}
+  .stat .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:700;color:var(--charcoal);}
+  .stat .v{font-family:"halyard-text";font-weight:900;font-size:18px;
+    letter-spacing:-0.01em;margin-top:0;color:var(--ink);line-height:1.15;}
+  .stat .s{font-size:10.5px;color:var(--charcoal);margin-top:1px;line-height:1.3;}
+
+  footer{margin-top:12px;padding-top:10px;border-top:1px solid var(--rule);
+    font-size:10.5px;color:var(--charcoal);line-height:1.5;}
+  footer a{color:var(--cerulean);}
+  footer b{color:var(--ink);font-weight:700;}
+
+  .readout{position:absolute;top:8px;left:8px;background:#fff;
+    border:1px solid var(--ink);border-radius:3px;padding:8px 12px;
+    font-size:11px;line-height:1.35;box-shadow:0 3px 10px rgba(0,0,0,.10);
+    min-width:230px;max-width:280px;pointer-events:none;z-index:10;}
+  .readout.hide{display:none;}
+  .readout .rn{font-family:"halyard-text";font-weight:900;font-size:13.5px;
+    color:var(--ink);letter-spacing:-0.01em;line-height:1.15;margin-bottom:2px;}
+  .readout .rb{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    font-weight:700;color:var(--charcoal);margin-bottom:6px;}
+  .readout .rv{font-family:"halyard-text";font-weight:900;font-size:22px;
+    color:var(--magenta);letter-spacing:-0.01em;line-height:1.05;}
+  .readout .rl{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    font-weight:700;color:var(--charcoal);margin-bottom:2px;}
+  .readout .row{display:flex;justify-content:space-between;gap:10px;
+    color:var(--charcoal);font-size:10.5px;padding-top:1px;}
+  .readout .row b{color:var(--ink);font-weight:700;}
+  .readout hr{border:0;border-top:1px solid var(--rule);margin:6px 0;}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <p class="eyebrow">Outdoor felonies / pedestrian volume / New York City</p>
+  <h1>Crime per walker, not <em>crime per resident</em></h1>
+  <p class="dek">Conventional crime maps divide incidents by the people who <i>live</i>
+    in a neighborhood. That punishes commercial corridors where the residential
+    population is tiny relative to the foot traffic. This map uses an MIT pedestrian-flow
+    model as the denominator instead — <b>outdoor incidents per million pedestrian-hours</b>
+    on the same two-hour window that the model estimates. Three years of NYPD data
+    (2022–2024), 197 New York City neighborhoods, six time slots, two crime categories
+    (felonies and misdemeanor assaults) that can be viewed separately or combined.</p>
+
+  <div class="ctrls">
+    <div class="grp">
+      <span class="lbl">Crime</span>
+      <div class="seg" id="catSeg">
+        <button data-v="fel" class="on">Felonies</button>
+        <button data-v="mas">Misd. assault</button>
+        <button data-v="comb">Combined</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="lbl">Metric</span>
+      <div class="seg" id="metSeg">
+        <button data-v="rate" class="on">Per walker-hour</button>
+        <button data-v="raw">Raw count</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="lbl">Day</span>
+      <div class="seg" id="daySeg">
+        <button data-v="wkdy" class="on">Weekday</button>
+        <button data-v="wknd">Weekend</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="lbl">Time of day</span>
+      <div class="seg" id="todSeg">
+        <button data-v="AM" class="on">AM (8–10a)</button>
+        <button data-v="MD">Midday (12–2p)</button>
+        <button data-v="PM">PM (5–7p)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-wrap" id="mapWrap">
+    <div id="map"></div>
+    <div id="readout" class="readout hide"></div>
+    <div id="fsTitle" class="fs-title">
+      <p class="fs-eyebrow">Outdoor felonies / pedestrian volume / NYC</p>
+      <h2 class="fs-head">Crime per walker, not crime per resident</h2>
+      <p class="fs-sum">Outdoor felonies divided by modeled pedestrian-hours, by neighborhood
+        and time of day. Three years of NYPD data (2022–2024) against the MIT City Form Lab
+        pedestrian-flow model.</p>
+      <p class="fs-src">Sources: <a href="https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i" target="_blank" rel="noopener">NYPD Complaint Data Historic</a> ·
+        <a href="https://www.nature.com/articles/s44284-025-00383-y" target="_blank" rel="noopener">Sevtsuk et al., <i>Nature Cities</i> 2025</a></p>
+    </div>
+    <button id="fsBtn" class="fs-btn" title="Expand to full screen" aria-label="Full screen">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M1 1h5v1.6H2.6V6H1V1zm14 0v5h-1.6V2.6H10V1h5zM1 15v-5h1.6v3.4H6V15H1zm14 0h-5v-1.6h3.4V10H15v5z"
+          fill="currentColor"/>
+      </svg>
+      <span class="lbl-enter">Full screen</span>
+      <span class="lbl-exit" style="display:none">Exit full screen</span>
+    </button>
+  </div>
+
+  <div class="legend" id="legend">
+    <span class="ttl" id="legendTitle">Felonies per million walker-hours</span>
+    <div class="swatches" id="legendSwatches"></div>
+    <div class="ticks" id="legendTicks"></div>
+    <span class="note">Hover or tap a neighborhood for the breakdown.</span>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="k" id="stTopK">Highest weekday-PM rate</div><div class="v" id="stTop">—</div>
+      <div class="s" id="stTopSub">per million walker-hours</div></div>
+    <div class="stat"><div class="k" id="stBotK">Lowest weekday-PM rate, busy areas</div><div class="v" id="stBot">—</div>
+      <div class="s" id="stBotSub">neighborhoods &gt;500k walkers/hr</div></div>
+    <div class="stat"><div class="k">Citywide outdoor felonies</div><div class="v">204,725</div>
+      <div class="s">2022–2024, all hours, walking-space locations only</div></div>
+    <div class="stat"><div class="k">Citywide outdoor misd. assaults</div><div class="v">49,547</div>
+      <div class="s">2022–2024, all hours, walking-space locations only</div></div>
+  </div>
+
+  <footer>
+    <b>Sources.</b>
+    Outdoor felony complaints: <a href="https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i" target="_blank" rel="noopener">NYPD Complaint Data Historic</a>,
+    filtered to LAW_CAT_CD = FELONY and premise types STREET, PARK/PLAYGROUND, HIGHWAY/PARKWAY, BUS STOP, BRIDGE.
+    Pedestrian volume: <a href="https://www.nature.com/articles/s44284-025-00383-y" target="_blank" rel="noopener">Sevtsuk, A., Basu, R., et al., <i>Estimating Pedestrian Flows on Street Networks in New York City</i>, Nature Cities, 2025</a>,
+    using the NYC Pedestrian Network Estimates dataset (2018–2019).
+    Neighborhood boundaries: 2020 NTAs from
+    <a href="https://data.cityofnewyork.us/City-Government/2020-Neighborhood-Tabulation-Areas-NTAs-Tabular/9nt8-h7nd" target="_blank" rel="noopener">NYC DCP</a>.
+    Full methodology: <a href="METHODOLOGY.md">METHODOLOGY.md</a>.
+    Subway felonies and bus-interior crime are excluded because the pedestrian-flow model only measures above-ground walking.
+    Basemap © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> /
+    <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.
+  </footer>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const VC = { chartreuse:'#dde44c', orange:'#ff7c53', magenta:'#e7466d', cerulean:'#217ebe' };
+
+// Color ramps (6 buckets each, low → high)
+const RAMP_RATE = ['#f3efe1','#e8e0a8','#dde44c','#f9b945','#ff7c53','#e7466d'];
+const RAMP_RAW  = ['#f3efe1','#dceaf2','#9fc8e0','#5e9fc7','#296aa3','#1a3b6e'];
+
+// Per-category bucket edges (chosen from each category's empirical distribution).
+const BREAKS = {
+  fel:  { rate: [0, 0.10, 0.20, 0.35, 0.55, 0.80], raw: [0, 50, 150, 300, 600, 1000] },
+  mas:  { rate: [0, 0.03, 0.06, 0.10, 0.15, 0.20], raw: [0, 10, 25, 50, 100, 150] },
+  comb: { rate: [0, 0.15, 0.30, 0.50, 0.80, 1.10], raw: [0, 60, 175, 350, 700, 1100] },
+};
+const CAT_LABEL = {
+  fel:  'felonies',
+  mas:  'misd. assaults',
+  comb: 'felonies + misd. assaults',
+};
+
+let state = { cat:'fel', metric:'rate', day:'wkdy', tod:'PM' };
+let nta = null, rates = null;
+
+const slotKey = (st) => st.day + st.tod;  // e.g. "wkdyPM"
+// Property names baked onto features: rate_<cat>_<slot>, raw_<cat>_<slot>
+const fieldFor = (st) => (st.metric==='rate' ? 'rate_' : 'raw_') + st.cat + '_' + slotKey(st);
+
+async function load() {
+  const [g, r] = await Promise.all([
+    fetch('nta_simplified.geojson').then(r=>r.json()),
+    fetch('rates_by_nta.json').then(r=>r.json()),
+  ]);
+  nta = g; rates = r;
+  // Merge per-category rate properties onto polygon features
+  for (const f of nta.features) {
+    const row = rates.data[f.properties.nta] || {};
+    for (const slot of ['wkdyAM','wkdyMD','wkdyPM','wkndAM','wkndMD','wkndPM']) {
+      const s = row[slot] || {};
+      f.properties['peds_'+slot] = s.peds_per_hr || 0;
+      for (const cat of ['fel','mas','comb']) {
+        const rate = s[cat+'_rate'];
+        f.properties['rate_'+cat+'_'+slot] = (rate == null) ? -1 : rate;
+        f.properties['raw_'+cat+'_'+slot] = s[cat] || 0;
+      }
+    }
+    f.properties._fullname = (f.properties.name || '') + ' · ' + (f.properties.boro || '');
+  }
+  updateStats();
+  initMap();
+}
+
+function updateStats() {
+  const rkey = 'rate_' + state.cat + '_wkdyPM';
+  const top_pool = nta.features.filter(f => f.properties[rkey] > 0 && f.properties.peds_wkdyPM > 30000);
+  const bot_pool = nta.features.filter(f => f.properties[rkey] >= 0 && f.properties.peds_wkdyPM > 500000);
+  const top_sorted = top_pool.slice().sort((a,b)=> b.properties[rkey] - a.properties[rkey]);
+  const bot_sorted = bot_pool.slice().sort((a,b)=> a.properties[rkey] - b.properties[rkey]);
+  document.getElementById('stTopK').textContent = 'Highest weekday-PM rate, ' + CAT_LABEL[state.cat];
+  document.getElementById('stBotK').textContent = 'Lowest weekday-PM rate, busy areas';
+  if (top_sorted.length) {
+    const top = top_sorted[0];
+    document.getElementById('stTop').textContent = top.properties[rkey].toFixed(2);
+    document.getElementById('stTopSub').textContent = top.properties.name + ' (' + top.properties.boro + ')';
+  }
+  if (bot_sorted.length) {
+    const bot = bot_sorted[0];
+    document.getElementById('stBot').textContent = bot.properties[rkey].toFixed(2);
+    document.getElementById('stBotSub').textContent = bot.properties.name + ' (' + bot.properties.boro + ')';
+  }
+}
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      basemap: {
+        type:'raster',
+        tiles:['https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png'],
+        tileSize:256, attribution:'&copy; OpenStreetMap &copy; CARTO',
+      },
+      basemap_labels: {
+        type:'raster',
+        tiles:['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png'],
+        tileSize:256,
+      },
+    },
+    layers: [
+      { id:'bg', type:'background', paint:{'background-color':'#eef0e5'} },
+      { id:'basemap', type:'raster', source:'basemap', paint:{'raster-opacity':0.95} },
+    ],
+  },
+  center:[-73.92, 40.735], zoom:10, minZoom:9, maxZoom:14,
+  attributionControl:{compact:true},
+});
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+
+function buildFillPaint(st) {
+  const field = fieldFor(st);
+  const breaks = BREAKS[st.cat][st.metric];
+  const ramp = st.metric==='rate' ? RAMP_RATE : RAMP_RAW;
+  // Build step expression: rate -1 (unknown) -> light grey
+  return {
+    'fill-color': [
+      'case',
+      ['<', ['to-number',['get',field]], 0], '#dad7c8',
+      ['step', ['to-number',['get',field]],
+        ramp[0],
+        breaks[1], ramp[1],
+        breaks[2], ramp[2],
+        breaks[3], ramp[3],
+        breaks[4], ramp[4],
+        breaks[5], ramp[5],
+      ]
+    ],
+    'fill-opacity': 0.78,
+  };
+}
+
+function initMap() {
+  if (map.getSource('nta')) return;
+  // Defensive: wait until the style is fully parsed before adding source/layer.
+  const s = map.getStyle();
+  if (!s || !s.sources) { map.once('styledata', initMap); setTimeout(initMap, 400); return; }
+  map.addSource('nta', { type:'geojson', data:nta });
+  map.addLayer({
+    id:'nta-fill', source:'nta', type:'fill',
+    paint: buildFillPaint(state),
+  }, 'basemap');
+  // Add labels above fill
+  map.moveLayer('nta-fill');
+  map.addLayer({
+    id:'nta-line', source:'nta', type:'line',
+    paint:{ 'line-color':'#ffffff', 'line-width':0.6, 'line-opacity':0.7 },
+  });
+  map.addLayer({
+    id:'nta-hover', source:'nta', type:'line',
+    paint:{ 'line-color':'#1b1b1b', 'line-width':1.6 },
+    filter:['==',['get','nta'],'__none__'],
+  });
+  map.addLayer({ id:'basemap_labels', type:'raster', source:'basemap_labels' });
+
+  const readout = document.getElementById('readout');
+  function showReadout(feat) {
+    readout.classList.remove('hide');
+    const p = feat.properties;
+    const sk = slotKey(state);
+    const cat = state.cat;
+    const rate = +p['rate_'+cat+'_'+sk];
+    const raw  = +p['raw_'+cat+'_'+sk];
+    const peds = +p['peds_'+sk];
+    const fel  = +p['raw_fel_'+sk];
+    const mas  = +p['raw_mas_'+sk];
+    const slotLabel = ({wkdyAM:'Weekday AM (8–10a)',wkdyMD:'Weekday midday (12–2p)',
+      wkdyPM:'Weekday PM (5–7p)',wkndAM:'Weekend AM (8–10a)',
+      wkndMD:'Weekend midday (12–2p)',wkndPM:'Weekend PM (5–7p)'})[sk];
+    const headline = state.metric==='rate'
+      ? `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`
+      : `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
+    readout.innerHTML =
+      `<div class="rn">${p.name}</div>
+       <div class="rb">${p.boro} · ${CAT_LABEL[cat]}</div>
+       <div class="rl">${slotLabel}</div>
+       <div class="rv">${headline}</div>
+       <hr/>
+       <div class="row"><span>Felonies (3 yr, this slot)</span><b>${fel.toLocaleString()}</b></div>
+       <div class="row"><span>Misd. assaults (3 yr, this slot)</span><b>${mas.toLocaleString()}</b></div>
+       <div class="row"><span>Pedestrians per hour (model)</span><b>${Math.round(peds).toLocaleString()}</b></div>
+       <div class="row"><span>Rate per M walker-hr (selected)</span><b>${rate<0?'—':rate.toFixed(2)}</b></div>`;
+  }
+  map.on('mousemove','nta-fill',(e)=>{
+    const f = e.features && e.features[0]; if (!f) return;
+    map.setFilter('nta-hover',['==',['get','nta'], f.properties.nta]);
+    showReadout(f);
+  });
+  map.on('mouseleave','nta-fill', ()=>{
+    readout.classList.add('hide');
+    map.setFilter('nta-hover',['==',['get','nta'],'__none__']);
+  });
+  map.on('click','nta-fill', (e)=>{
+    const f = e.features && e.features[0]; if (!f) return;
+    map.setFilter('nta-hover',['==',['get','nta'], f.properties.nta]);
+    showReadout(f);
+  });
+}
+
+function apply() {
+  if (map.getLayer('nta-fill')) {
+    const paint = buildFillPaint(state);
+    Object.entries(paint).forEach(([k,v]) => map.setPaintProperty('nta-fill', k, v));
+  }
+  drawLegend();
+  if (nta) updateStats();
+}
+
+function drawLegend() {
+  const breaks = BREAKS[state.cat][state.metric];
+  const ramp = state.metric==='rate' ? RAMP_RATE : RAMP_RAW;
+  const sw = document.getElementById('legendSwatches');
+  const tk = document.getElementById('legendTicks');
+  sw.innerHTML = ramp.map(c=>`<div class="sw" style="background:${c}"></div>`).join('');
+  const labels = state.metric==='rate'
+    ? ['0', breaks[1].toFixed(2), breaks[2].toFixed(2), breaks[3].toFixed(2), breaks[4].toFixed(2), breaks[5].toFixed(2)+'+']
+    : ['0', breaks[1], breaks[2], breaks[3], breaks[4], breaks[5]+'+'];
+  tk.innerHTML = labels.map(l=>`<span>${l}</span>`).join('');
+  document.getElementById('legendTitle').textContent = state.metric==='rate'
+    ? CAT_LABEL[state.cat][0].toUpperCase() + CAT_LABEL[state.cat].slice(1) + ' per million walker-hours'
+    : 'Outdoor ' + CAT_LABEL[state.cat] + ' (3 years), this slot';
+}
+
+function setSeg(selId, value){
+  document.querySelectorAll('#'+selId+' button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.v===value);
+  });
+}
+document.getElementById('catSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  state.cat = b.dataset.v; setSeg('catSeg', state.cat); apply();
+});
+document.getElementById('metSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  state.metric = b.dataset.v; setSeg('metSeg', state.metric); apply();
+});
+document.getElementById('daySeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  state.day = b.dataset.v; setSeg('daySeg', state.day); apply();
+});
+document.getElementById('todSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  state.tod = b.dataset.v; setSeg('todSeg', state.tod); apply();
+});
+
+// Set initial selection state (PM, Weekday)
+setSeg('todSeg','PM');
+drawLegend();
+
+// Fire data load as soon as the style spec is parsed — don't wait for all basemap tiles.
+let _loaded = false;
+function tryLoad(){ if (_loaded) return; _loaded = true; load(); }
+map.on('styledata', tryLoad);
+map.on('load', tryLoad);
+setTimeout(tryLoad, 800);
+
+// --- full-screen ---
+const fsBtn = document.getElementById('fsBtn');
+function updateFsBtn(){
+  const on = document.body.classList.contains('fs-mode') || !!document.fullscreenElement;
+  fsBtn.querySelector('.lbl-enter').style.display = on ? 'none' : 'inline';
+  fsBtn.querySelector('.lbl-exit').style.display  = on ? 'inline' : 'none';
+  setTimeout(()=> map.resize(), 60);
+}
+function enterFs(){
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  document.body.classList.add('fs-mode');
+  if (req) { try { req.call(el); } catch(e){} }
+  updateFsBtn();
+}
+function exitFs(){
+  document.body.classList.remove('fs-mode');
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(()=>{});
+  } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+  }
+  updateFsBtn();
+}
+fsBtn.addEventListener('click', ()=>{
+  const on = document.body.classList.contains('fs-mode') || !!document.fullscreenElement;
+  on ? exitFs() : enterFs();
+});
+document.addEventListener('fullscreenchange', updateFsBtn);
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape' && document.body.classList.contains('fs-mode')) exitFs();
+});
+
+// iframe height
+(function(){
+  if (window.parent === window) return;
+  var last = 0;
+  function post(){
+    if (document.fullscreenElement || document.body.classList.contains('fs-mode')) return;
+    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (h && Math.abs(h - last) > 1) {
+      last = h;
+      try { window.parent.postMessage({type:'crime-per-walker:height', height:h}, '*'); } catch(e){}
+    }
+  }
+  window.addEventListener('load', post);
+  window.addEventListener('resize', post);
+  if (window.ResizeObserver) new ResizeObserver(post).observe(document.body);
+  setInterval(post, 1000);
+})();
+</script>
+</body>
+</html>
