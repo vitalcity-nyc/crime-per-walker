@@ -461,17 +461,16 @@ function buildFillPaint(st) {
   if (st.metric === 'rank') {
     const field = fieldFor(st);
     const b = rankBreaks();
+    // Single step expression: rank < 1 (unranked/-1) → grey; 1..b[0]-1 → ramp[0]; etc.
     return {
       'fill-color': [
-        'case',
-        ['<', ['to-number', ['get', field]], 1], '#dad7c8',  // unranked
-        ['step', ['to-number', ['get', field]],
-          RAMP_RANK[0],
-          b[0], RAMP_RANK[1],
-          b[1], RAMP_RANK[2],
-          b[2], RAMP_RANK[3],
-          b[3], RAMP_RANK[4],
-        ]
+        'step', ['coalesce', ['to-number', ['get', field]], -1],
+        '#dad7c8',
+        1, RAMP_RANK[0],
+        b[0], RAMP_RANK[1],
+        b[1], RAMP_RANK[2],
+        b[2], RAMP_RANK[3],
+        b[3], RAMP_RANK[4],
       ],
       'fill-opacity': 0.82,
     };
@@ -661,13 +660,15 @@ function apply() {
   }
   // Toggle rank-label visibility + update its field
   if (map.getLayer('area-rank-label')) {
-    const showLabels = effState.metric==='rank' && state.res==='nta';
-    map.setLayoutProperty('area-rank-label','visibility', showLabels ? 'visible' : 'none');
-    if (showLabels) {
-      const rkField = fieldFor({...state, metric:'rank'});
-      map.setLayoutProperty('area-rank-label','text-field', ['to-string', ['get', rkField]]);
-      map.setFilter('area-rank-label', ['>', ['get', rkField], 0]);
-    }
+    try {
+      const showLabels = effState.metric==='rank' && state.res==='nta';
+      map.setLayoutProperty('area-rank-label','visibility', showLabels ? 'visible' : 'none');
+      if (showLabels) {
+        const rkField = fieldFor({...state, metric:'rank'});
+        map.setLayoutProperty('area-rank-label','text-field', ['to-string', ['get', rkField]]);
+        map.setFilter('area-rank-label', ['>', ['get', rkField], 0]);
+      }
+    } catch (e) { console.warn('rank-label update failed', e); }
   }
   const note = document.getElementById('rateNote');
   note.style.display = (state.metric==='rate' && !hasRate) ? 'block' : 'none';
