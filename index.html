@@ -299,6 +299,7 @@ const DATA = {
 function curRes() { return DATA[state.res]; }
 const slotKey = (st) => st.day + st.tod;
 const slotIdx = (st) => SLOTS.indexOf(slotKey(st));
+const fieldFor = (st) => (st.metric==='rate' ? 'rate_' : 'raw_') + st.cat + '_' + slotKey(st);
 
 async function ensureData(res) {
   const d = DATA[res];
