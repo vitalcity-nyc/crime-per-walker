@@ -28,11 +28,34 @@ ALL_SLOTS = list(SLOT_HOURS.keys())
 RATEABLE = set(PROP_MAP.keys())
 CATS = ['fel','mas','rob','asf','gla','pla','vio','comb']
 
-def build(ped_path, crimes_path, geo_path, geo_id_key, out_path, label):
+def walk_dna(od_row):
+    """Convert raw OD trip totals into 4 walk-purpose shares (%)."""
+    if not od_row: return None
+    total = (od_row.get('HME_SCH',0) + od_row.get('HME_MTA',0) + od_row.get('HME_PRK',0)
+             + od_row.get('HME_JOB',0) + od_row.get('HME_AMN',0)
+             + od_row.get('JOB_MTA',0) + od_row.get('JOB_AMN',0)
+             + od_row.get('AMN_AMN',0) + od_row.get('AMN_MTA',0))
+    if total <= 0: return None
+    commuter = od_row.get('HME_JOB',0) + od_row.get('HME_MTA',0) + od_row.get('JOB_MTA',0)
+    leisure  = od_row.get('HME_AMN',0) + od_row.get('AMN_AMN',0) + od_row.get('JOB_AMN',0) + od_row.get('AMN_MTA',0)
+    school   = od_row.get('HME_SCH',0)
+    park     = od_row.get('HME_PRK',0)
+    return {
+        'commuter': round(100*commuter/total, 1),
+        'leisure':  round(100*leisure/total, 1),
+        'school':   round(100*school/total, 1),
+        'park':     round(100*park/total, 1),
+        'total':    round(total, 0),
+    }
+
+def build(ped_path, crimes_path, geo_path, geo_id_key, out_path, label, walk_purpose_path=None):
     """Emit compact per-slot arrays for the web map."""
     ped = json.load(open(ped_path))
     crimes = json.load(open(crimes_path))['data']
     geo = json.load(open(geo_path))
+    walk_purpose = {}
+    if walk_purpose_path:
+        walk_purpose = json.load(open(walk_purpose_path))['data']
     data = {}
     for f in geo['features']:
         uid = f['properties'][geo_id_key]
@@ -55,7 +78,8 @@ def build(ped_path, crimes_path, geo_path, geo_id_key, out_path, label):
                 else:
                     r_arr[cat].append(None)
         totals = {cat: fcrime.get(cat, {}).get('total_outdoor', 0) for cat in CATS}
-        data[uid] = {'n':name,'b':boro,'p':p_arr,'c':c_arr,'r':r_arr,'t':totals}
+        dna = walk_dna(walk_purpose.get(uid))
+        data[uid] = {'n':name,'b':boro,'p':p_arr,'c':c_arr,'r':r_arr,'t':totals,'d':dna}
     out = {'years':'2022-2024','slots':ALL_SLOTS,'cats':CATS,
            'rateable_slots':sorted(RATEABLE),'slot_hours':SLOT_HOURS,'data':data}
     with open(out_path, 'w') as f:
@@ -67,11 +91,13 @@ build('/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/ped_hours_by_nt
       '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/nta.geojson',
       'nta2020',
       '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/rates_nta.json',
-      'NTA')
+      'NTA',
+      '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/walk_purpose_by_nta.json')
 
 build('/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/ped_hours_by_ct.json',
       '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/crimes_by_ct.json',
       '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/ct.geojson',
       'boroct2020',
       '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/rates_ct.json',
-      'CT')
+      'CT',
+      '/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/walk_purpose_by_ct.json')

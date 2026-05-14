@@ -145,7 +145,8 @@
     on the same window that the model estimates. Three years of NYPD data
     (2022–2024), at <b>neighborhood or census-tract</b> resolution, six daytime
     windows that the model covers (8a–7p) plus <b>evening and late-night raw-count
-    views</b> for after dark.</p>
+    views</b> for after dark. Hover any area for its "<b>walk DNA</b>" — what share
+    of its foot traffic is commuter, leisure, school, or park trips.</p>
 
   <div class="ctrls">
     <div class="grp">
@@ -368,6 +369,13 @@ async function ensureData(res) {
         f.properties['rate_'+cat+'_'+slot] = (rate == null) ? -1 : rate;
         f.properties['raw_'+cat+'_'+slot]  = (row.c[cat] && row.c[cat][i]) || 0;
       }
+    }
+    // Walk DNA — commuter/leisure/school/park trip-purpose mix
+    if (row.d) {
+      f.properties.dna_commuter = row.d.commuter;
+      f.properties.dna_leisure = row.d.leisure;
+      f.properties.dna_school = row.d.school;
+      f.properties.dna_park = row.d.park;
     }
   }
   // Rank computation: rank 1 = highest crime intensity for that (cat, slot).
@@ -611,6 +619,24 @@ function initMap() {
     ].map(([k,v]) => `<div class="row"><span>${k}</span><b>${(v||0).toLocaleString()}</b></div>`).join('');
     const ntaLabel = p.ntaname ? `<div class="rb" style="font-size:9px">${p.ntaname}</div>` : '';
     const noRate = hasRate ? '' : `<div class="row" style="color:var(--magenta);font-weight:700"><span>No walker model</span><b>raw only</b></div>`;
+    // Walk DNA — what kind of walking happens here
+    let dnaBlock = '';
+    if (p.dna_commuter != null) {
+      const segs = [
+        ['Commuter', +p.dna_commuter, '#217ebe'],
+        ['Leisure',  +p.dna_leisure,  '#ff7c53'],
+        ['School',   +p.dna_school,   '#dde44c'],
+        ['Park',     +p.dna_park,     '#43a047'],
+      ];
+      const bar = segs.map(([_,v,c]) =>
+        `<span style="display:inline-block;height:7px;width:${v}%;background:${c}"></span>`).join('');
+      const txt = segs.map(([k,v,c]) =>
+        `<span style="color:${c};font-weight:700">${k} ${Math.round(v)}%</span>`).join(' &nbsp;');
+      dnaBlock = `<hr/>
+        <div class="rl" style="margin-bottom:3px">Walk DNA (trip purpose, MIT model)</div>
+        <div style="display:flex;width:100%;height:7px;border:1px solid #e7e6df;margin-bottom:3px">${bar}</div>
+        <div style="font-size:9.5px;line-height:1.4">${txt}</div>`;
+    }
     readout.innerHTML =
       `<div class="rn">${state.res==='ct' ? 'Tract '+p.name : p.name}</div>
        <div class="rb">${p.boro} · ${CAT_LABEL[cat]}</div>
@@ -624,6 +650,7 @@ function initMap() {
        ${riskLine}
        ${mixLine}
        ${noRate}
+       ${dnaBlock}
        <hr/>
        <div class="rl" style="margin-bottom:3px">In-slot counts (3 yr)</div>
        ${breakdown}`;
