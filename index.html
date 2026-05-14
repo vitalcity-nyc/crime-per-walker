@@ -415,31 +415,41 @@ function buildFillPaint(st) {
 }
 
 function initMap() {
-  const s = map.getStyle();
-  if (!s || !s.sources) { map.once('styledata', initMap); setTimeout(initMap, 400); return; }
+  try {
+    const s = map.getStyle();
+    if (!s || !s.sources) { setTimeout(initMap, 250); return; }
+    if (!map.isStyleLoaded()) { map.once('idle', initMap); setTimeout(initMap, 500); return; }
+  } catch (e) { setTimeout(initMap, 500); return; }
   const idKey = curRes().idKey;
   if (map.getSource('area')) {
     map.getSource('area').setData(curRes().geo);
-    map.setFilter('area-hover', ['==',['get',idKey],'__none__']);
+    if (map.getLayer('area-hover')) map.setFilter('area-hover', ['==',['get',idKey],'__none__']);
     apply();
     return;
   }
-  map.addSource('area', { type:'geojson', data: curRes().geo });
-  map.addLayer({
-    id:'area-fill', source:'area', type:'fill',
-    paint: buildFillPaint(state),
-  }, 'basemap');
-  map.moveLayer('area-fill');
-  map.addLayer({
-    id:'area-line', source:'area', type:'line',
-    paint:{ 'line-color':'#ffffff', 'line-width':0.4, 'line-opacity':0.6 },
-  });
-  map.addLayer({
-    id:'area-hover', source:'area', type:'line',
-    paint:{ 'line-color':'#1b1b1b', 'line-width':1.6 },
-    filter:['==',['get',idKey],'__none__'],
-  });
-  map.addLayer({ id:'basemap_labels', type:'raster', source:'basemap_labels' });
+  try {
+    map.addSource('area', { type:'geojson', data: curRes().geo });
+    map.addLayer({
+      id:'area-fill', source:'area', type:'fill',
+      paint: buildFillPaint(state),
+    });
+    map.addLayer({
+      id:'area-line', source:'area', type:'line',
+      paint:{ 'line-color':'#ffffff', 'line-width':0.4, 'line-opacity':0.6 },
+    });
+    map.addLayer({
+      id:'area-hover', source:'area', type:'line',
+      paint:{ 'line-color':'#1b1b1b', 'line-width':1.6 },
+      filter:['==',['get',idKey],'__none__'],
+    });
+    if (!map.getLayer('basemap_labels')) {
+      map.addLayer({ id:'basemap_labels', type:'raster', source:'basemap_labels' });
+    }
+  } catch (e) {
+    console.error('initMap addLayer failed:', e);
+    setTimeout(initMap, 500);
+    return;
+  }
 
   const readout = document.getElementById('readout');
   const SLOT_LABEL = {
