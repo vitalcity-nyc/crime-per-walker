@@ -41,6 +41,16 @@
   .seg button.on{background:var(--ink);color:#fff;}
   .seg button:hover:not(.on){background:#f2f1ea;}
 
+  .catsel{font:inherit;font-size:11px;font-weight:700;color:var(--ink);
+    background:#fff;border:1px solid var(--rule);border-radius:3px;
+    padding:5px 22px 5px 9px;cursor:pointer;
+    appearance:none;-webkit-appearance:none;-moz-appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M1 3l4 4 4-4' stroke='%231b1b1b' stroke-width='1.5' fill='none'/></svg>");
+    background-repeat:no-repeat;background-position:right 6px center;background-size:9px;}
+  .catsel:hover{background-color:#f2f1ea;}
+  .catsel optgroup{font-weight:700;color:var(--charcoal);}
+  .catsel option{font-weight:400;color:var(--ink);}
+
   .map-wrap{position:relative;border:1px solid var(--rule);border-radius:3px;
     overflow:hidden;background:#fff;}
   #map{width:100%;height:520px;}
@@ -136,8 +146,8 @@
 <body>
 <div class="frame">
 
-  <p class="eyebrow">Outdoor felonies / pedestrian volume / New York City</p>
-  <h1>Crime per walker, not <em>crime per resident</em></h1>
+  <p class="eyebrow">Outdoor crime + pedestrian crashes / pedestrian volume / New York City</p>
+  <h1>Crime and crashes per walker, not <em>per resident</em></h1>
   <p class="dek">Conventional crime maps divide incidents by the people who <i>live</i>
     in a neighborhood. That punishes commercial corridors where the residential
     population is tiny relative to the foot traffic. This map uses an MIT pedestrian-flow
@@ -145,22 +155,31 @@
     on the same window that the model estimates. Three years of NYPD data
     (2022–2024), at <b>neighborhood or census-tract</b> resolution, six daytime
     windows that the model covers (8a–7p) plus <b>evening and late-night raw-count
-    views</b> for after dark. Hover any area for its "<b>walk DNA</b>" — what share
-    of its foot traffic is commuter, leisure, school, or park trips.</p>
+    views</b> for after dark. The "Show" menu also offers <b>pedestrian-crash data</b>
+    — injuries and fatalities per walker-hour, the way Vision Zero rarely measures
+    it. Hover any area for its "<b>walk DNA</b>" — what share of its foot traffic
+    is commuter, leisure, school, or park trips.</p>
 
   <div class="ctrls">
     <div class="grp">
-      <span class="lbl">Crime</span>
-      <div class="seg" id="catSeg">
-        <button data-v="fel" class="on">Felonies</button>
-        <button data-v="vio">Violent</button>
-        <button data-v="rob">Robbery</button>
-        <button data-v="asf">Felony asslt</button>
-        <button data-v="gla">Grand larceny</button>
-        <button data-v="mas">Misd. assault</button>
-        <button data-v="pla">Petit larceny</button>
-        <button data-v="comb">All shown</button>
-      </div>
+      <span class="lbl">Show</span>
+      <select id="catSel" class="catsel">
+        <optgroup label="Outdoor crime — NYPD complaints">
+          <option value="fel">All felonies</option>
+          <option value="vio">Violent (fel. asslt + rob. + misd. asslt)</option>
+          <option value="rob">Robbery (felony)</option>
+          <option value="asf">Felony assault</option>
+          <option value="gla">Grand larceny (felony)</option>
+          <option value="mas">Misdemeanor assault</option>
+          <option value="pla">Petit larceny (misd.)</option>
+          <option value="comb">All shown (felonies + misd. asslt + petit larc.)</option>
+        </optgroup>
+        <optgroup label="Pedestrian crashes — NYPD MVC">
+          <option value="pall">Pedestrian victims (injured + killed)</option>
+          <option value="pinj">Pedestrian injuries</option>
+          <option value="pkll">Pedestrian fatalities</option>
+        </optgroup>
+      </select>
     </div>
     <div class="grp">
       <span class="lbl">Metric</span>
@@ -306,6 +325,9 @@ const BREAKS = {
   mas:  { rate: [0, 0.03, 0.06, 0.10, 0.15, 0.20],  raw: [0, 10, 25, 50, 100, 150] },
   pla:  { rate: [0, 0.04, 0.08, 0.13, 0.20, 0.27],  raw: [0, 15, 35, 60, 100, 140] },
   comb: { rate: [0, 0.20, 0.40, 0.70, 1.00, 1.30],  raw: [0, 80, 200, 400, 800, 1300] },
+  pall: { rate: [0, 0.02, 0.04, 0.06, 0.10, 0.15],  raw: [0, 5, 12, 20, 30, 45] },
+  pinj: { rate: [0, 0.02, 0.04, 0.06, 0.10, 0.15],  raw: [0, 5, 12, 20, 30, 45] },
+  pkll: { rate: [0, 0.0025, 0.005, 0.010, 0.015, 0.020], raw: [0, 1, 2, 3, 5, 7] },
 };
 const CAT_LABEL = {
   fel:  'felonies',
@@ -316,6 +338,9 @@ const CAT_LABEL = {
   mas:  'misd. assaults',
   pla:  'petit larcenies',
   comb: 'felonies + misd. assault + petit larceny',
+  pall: 'pedestrian victims (injuries + fatalities)',
+  pinj: 'pedestrian injuries',
+  pkll: 'pedestrian fatalities',
 };
 
 let state = { cat:'fel', metric:'rate', day:'wkdy', tod:'PM', res:'nta' };
@@ -354,7 +379,7 @@ async function ensureData(res) {
       // tract or NTA with no overlap — mark all rates as unknown
       for (const slot of SLOTS) {
         f.properties['peds_'+slot] = 0;
-        for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb']) {
+        for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb','pall','pinj','pkll']) {
           f.properties['rate_'+cat+'_'+slot] = -1;
           f.properties['raw_'+cat+'_'+slot] = 0;
         }
@@ -364,7 +389,7 @@ async function ensureData(res) {
     for (let i=0; i<SLOTS.length; i++) {
       const slot = SLOTS[i];
       f.properties['peds_'+slot] = row.p[i] || 0;
-      for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb']) {
+      for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb','pall','pinj','pkll']) {
         const rate = row.r[cat] && row.r[cat][i];
         f.properties['rate_'+cat+'_'+slot] = (rate == null) ? -1 : rate;
         f.properties['raw_'+cat+'_'+slot]  = (row.c[cat] && row.c[cat][i]) || 0;
@@ -380,7 +405,7 @@ async function ensureData(res) {
   }
   // Rank computation: rank 1 = highest crime intensity for that (cat, slot).
   // Rate when available (AM/MD/PM); raw count otherwise (EV/LN).
-  for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb']) {
+  for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb','pall','pinj','pkll']) {
     for (const slot of SLOTS) {
       const rkField = 'rank_' + cat + '_' + slot;
       const useRate = RATEABLE.has(slot);
@@ -732,9 +757,9 @@ function setSeg(selId, value){
     b.classList.toggle('on', b.dataset.v===value);
   });
 }
-document.getElementById('catSeg').addEventListener('click', e=>{
-  const b = e.target.closest('button'); if(!b) return;
-  state.cat = b.dataset.v; setSeg('catSeg', state.cat); apply();
+document.getElementById('catSel').addEventListener('change', e=>{
+  state.cat = e.target.value;
+  apply();
 });
 document.getElementById('metSeg').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;

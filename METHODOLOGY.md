@@ -28,6 +28,18 @@ Misdemeanor assault is captured separately because it is the most common interpe
 
 **Excluded.** `TRANSIT - NYC SUBWAY`, `TRANSIT FACILITY (OTHER)`, `BUS (NYC TRANSIT)`, and indoor premise types. The pedestrian-flow model only estimates above-ground sidewalk and crosswalk walking, so the numerator is restricted to the same kind of place — incidents that happened in walking-space, where a pedestrian could reasonably be present.
 
+### Pedestrian crashes (alternate numerator)
+
+The Show menu also offers three pedestrian-crash categories drawn from the [NYPD Motor Vehicle Collisions – Crashes](https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95) dataset, same 2022–2024 window:
+
+| Toggle | Definition | Citywide 3-yr |
+| --- | --- | ---: |
+| Pedestrian victims | `SUM(number_of_pedestrians_injured + number_of_pedestrians_killed)` per crash | 26,292 |
+| Pedestrian injuries | `SUM(number_of_pedestrians_injured)` | 25,969 |
+| Pedestrian fatalities | `SUM(number_of_pedestrians_killed)` | 323 |
+
+Each crash row in the dataset is one event but can involve multiple pedestrians; we sum victims, not crashes, so the rate is interpretable as "how many people are injured or killed per million walker-hours." Geocode and time-of-day classification use the crash's `latitude/longitude` and `crash_date/crash_time` fields.
+
 **Date and time fields.** We use `rpt_dt` (report date) to bound the analysis to calendar years 2022–2024, consistent with the standing project rule that year-attribution uses `rpt_dt`. Time-of-day classification, however, has to use `cmplnt_fr_dt` and `cmplnt_fr_tm` — those are the only fields that record when the offense was reported to have occurred. Records whose reported time falls outside the six 2-hour windows are still counted in the citywide total but are not included in any of the six per-slot rates.
 
 **Spatial join.** Each complaint's `(latitude, longitude)` is point-in-polygon tested against the 2020 NTA boundaries; matched complaints are counted toward that NTA. 29 of 204,728 complaints (0.014%) fell outside all NTA polygons (most are over water) and were dropped.
