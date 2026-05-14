@@ -92,7 +92,9 @@ Bracket breaks for the per-walker-hour map (chosen from the empirical distributi
 
 - **Model vintage.** The pedestrian-flow estimates are calibrated against 2018–2019 field counts. Post-pandemic, midtown and Lower Manhattan foot traffic recovered slowly; if 2022–2024 walking is genuinely lower than 2018–2019 in commercial cores, this analysis somewhat *understates* the per-walker rate there. The qualitative re-ranking (Times Square far safer than the Bronx per walker) is robust to this — the ratios are not close.
 - **Indoor versus outdoor classification.** `prem_typ_desc` is filled in by the responding officer and is occasionally ambiguous. We use the most conservative outdoor set.
-- **Slot coverage.** The six slots together cover 12 hours per week, or 7.1% of the calendar. The map rates apply to those windows only. Total citywide outdoor felonies for all hours of 2022–2024 are shown in the stat panel for context (204,728) but are not used in the rate calculation.
+- **Slot coverage.** The six MIT-modeled windows together cover 12 hours per week, or 7.1% of the calendar. Per-walker *rates* are only computed for those windows. The map adds two **after-dark windows** — evening (7–11 p.m.) and late night (11 p.m.–2 a.m.) — but these show **raw incident counts only**, with a visible "no walker model published for this window" notice when the rate metric is selected. 38% of the 24-hour outdoor incident total falls in those two windows, so leaving them out of the map would be a serious omission; we just can't compute a defensible per-walker rate without an evening walker estimate.
+
+**Resolution.** The map offers two units: 197 residential **2020 NTAs** (Neighborhood Tabulation Areas — recognizable neighborhood names, ~25k–80k residents) and 2,325 **2020 census tracts** (~2k–8k residents). Tract-level reveals block-cluster variation inside an NTA but has smaller numerators per cell, so single-tract rates wobble more; treat dark-red individual tracts as suggestive rather than definitive.
 - **Underreporting.** Felony complaints are a measure of reports to the NYPD, not of victimization. Reporting rates vary across neighborhoods.
 - **Boundary smoothing.** Aggregating to NTAs hides block-level variation. A future iteration could move to street-segment level on the numerator side, but the felony density at that resolution is too sparse for stable rates.
 
@@ -101,8 +103,9 @@ Bracket breaks for the per-walker-hour map (chosen from the empirical distributi
 All scripts are in this directory:
 
 - `build_ped_hours.py` — extracts segment-level pedestrian volumes from `pedflows.pmtiles` and aggregates to NTAs (`ped_hours_by_nta.json`).
-- `fetch_crimes.py` — pulls outdoor felony complaints AND misdemeanor-assault complaints from the Socrata API and aggregates to NTAs (`crimes_by_nta.json`). (Earlier single-category script `fetch_felonies.py` is preserved for reference.)
-- `compute_rates.py` — joins pedestrian-hours and crime counts and computes per-slot rates for all three categories (`rates_by_nta.json`).
+- `build_ped_hours_ct.py` — same, aggregated to 2020 census tracts (`ped_hours_by_ct.json`).
+- `fetch_crimes.py` — pulls outdoor felonies + misd. assault + petit larceny from the Socrata API, partitions into eight categories (felonies, robbery, felony assault, grand larceny, misd. assault, petit larceny, violent composite, all-shown composite), and aggregates to both NTAs and tracts (`crimes_by_nta.json`, `crimes_by_ct.json`). Time slots include the three MIT-modeled windows plus evening and late-night (raw count only).
+- `compute_rates.py` — joins pedestrian-hours and crime counts and emits the compact `rates_nta.json` and `rates_ct.json` files the page actually loads.
 - `nta.geojson` / `nta_simplified.geojson` — 2020 NTA polygons from NYC DCP (`9nt8-h7nd`).
 - `index.html` — the map.
 
