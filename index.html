@@ -166,6 +166,7 @@
       <div class="seg" id="metSeg">
         <button data-v="rate" class="on">Per walker-hour</button>
         <button data-v="raw">Raw count</button>
+        <button data-v="rank">Rank</button>
       </div>
     </div>
     <div class="grp">
@@ -238,6 +239,37 @@
       <div class="s">38 % of the 24-hr total; no published walker model for these hours</div></div>
   </div>
 
+  <div class="frame-sub" style="margin-top:32px;border-top:1px solid var(--rule);padding-top:18px;">
+    <p class="eyebrow">Re-ranking</p>
+    <h2 style="font-family:halyard-text,Inter,sans-serif;font-weight:900;font-size:22px;line-height:1.12;letter-spacing:-0.01em;margin:0 0 6px;">
+      The map most New York City reads gets <em style="color:var(--magenta);font-style:normal">these neighborhoods wrong</em>
+    </h2>
+    <p class="dek">Each dot is a neighborhood. The horizontal axis is its rank when felonies are
+      divided by residents (the standard map). The vertical axis is its rank when felonies are
+      divided by walkers (this map). Dots on the gray diagonal rank the same either way.
+      Dots <b>below the line</b> look worse per resident than they really are per walker —
+      these are the commercial corridors the standard map penalizes for being busy. Dots
+      <b>above the line</b> are the opposite — residential neighborhoods where each walker
+      faces more risk than the per-resident rate suggests.</p>
+    <div id="scatter-wrap" style="border:1px solid var(--rule);border-radius:3px;background:#fff;padding:8px;margin:10px 0 4px;">
+      <svg id="scatter" viewBox="0 0 720 480" style="width:100%;height:auto;display:block;font-family:halyard-text,Inter,sans-serif;"></svg>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--charcoal);margin-bottom:6px;">
+      <span style="font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.08em;font-size:10px;">Borough</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e7466d;vertical-align:middle;margin-right:4px"></span>Bronx</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff7c53;vertical-align:middle;margin-right:4px"></span>Manhattan</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f9b945;vertical-align:middle;margin-right:4px"></span>Brooklyn</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#217ebe;vertical-align:middle;margin-right:4px"></span>Queens</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#444;vertical-align:middle;margin-right:4px"></span>Staten Island</span>
+    </div>
+    <p style="font-size:11px;color:var(--charcoal);line-height:1.5;margin:8px 0 0;">
+      <b>How to read it.</b>
+      Felonies-only (all hours of 2022–2024) divided by population vs. divided by modeled weekday-PM walker-hours.
+      Population: 2010 census tracts via CDC PLACES, mapped to 2020 NTAs (covers ~93 % of residents);
+      NTAs with fewer than 1,000 residents or zero felonies are dropped. Hover any dot for details.
+    </p>
+  </div>
+
   <footer>
     <b>Sources.</b>
     Outdoor felony complaints: <a href="https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i" target="_blank" rel="noopener">NYPD Complaint Data Historic</a>,
@@ -260,6 +292,8 @@ const VC = { chartreuse:'#dde44c', orange:'#ff7c53', magenta:'#e7466d', cerulean
 // Color ramps (6 buckets each, low → high)
 const RAMP_RATE = ['#f3efe1','#e8e0a8','#dde44c','#f9b945','#ff7c53','#e7466d'];
 const RAMP_RAW  = ['#f3efe1','#dceaf2','#9fc8e0','#5e9fc7','#296aa3','#1a3b6e'];
+// Rank ramp: 5 buckets, rank 1 = darkest red, last quintile = palest.
+const RAMP_RANK = ['#e7466d','#ff7c53','#f9b945','#dde44c','#e8e0a8'];
 
 // Per-category bucket edges (chosen from each category's empirical distribution).
 const BREAKS = {
@@ -299,7 +333,10 @@ const DATA = {
 function curRes() { return DATA[state.res]; }
 const slotKey = (st) => st.day + st.tod;
 const slotIdx = (st) => SLOTS.indexOf(slotKey(st));
-const fieldFor = (st) => (st.metric==='rate' ? 'rate_' : 'raw_') + st.cat + '_' + slotKey(st);
+const fieldFor = (st) => {
+  const pref = st.metric==='rate' ? 'rate_' : (st.metric==='raw' ? 'raw_' : 'rank_');
+  return pref + st.cat + '_' + slotKey(st);
+};
 
 async function ensureData(res) {
   const d = DATA[res];
@@ -330,6 +367,26 @@ async function ensureData(res) {
         const rate = row.r[cat] && row.r[cat][i];
         f.properties['rate_'+cat+'_'+slot] = (rate == null) ? -1 : rate;
         f.properties['raw_'+cat+'_'+slot]  = (row.c[cat] && row.c[cat][i]) || 0;
+      }
+    }
+  }
+  // Rank computation: rank 1 = highest crime intensity for that (cat, slot).
+  // Rate when available (AM/MD/PM); raw count otherwise (EV/LN).
+  for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb']) {
+    for (const slot of SLOTS) {
+      const rkField = 'rank_' + cat + '_' + slot;
+      const useRate = RATEABLE.has(slot);
+      const valKey = (useRate ? 'rate_' : 'raw_') + cat + '_' + slot;
+      const sortable = [];
+      for (let i=0; i<g.features.length; i++) {
+        g.features[i].properties[rkField] = -1; // default unranked
+        const v = g.features[i].properties[valKey];
+        if (v == null || v < 0) continue;
+        sortable.push({i, v: +v});
+      }
+      sortable.sort((a, b) => b.v - a.v || a.i - b.i);
+      for (let r=0; r<sortable.length; r++) {
+        g.features[sortable[r].i].properties[rkField] = r + 1;
       }
     }
   }
@@ -371,6 +428,7 @@ const map = new maplibregl.Map({
   container: 'map',
   style: {
     version: 8,
+    glyphs: 'https://basemaps.cartocdn.com/gl/positron-gl-style/{fontstack}/{range}.pbf',
     sources: {
       basemap: {
         type:'raster',
@@ -393,7 +451,31 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 
+function rankBreaks() {
+  // Step thresholds for rank buckets based on number of ranked features.
+  const N = curRes().geo ? curRes().geo.features.length : 262;
+  return [Math.ceil(0.05*N)+1, Math.ceil(0.15*N)+1, Math.ceil(0.35*N)+1, Math.ceil(0.65*N)+1];
+}
+
 function buildFillPaint(st) {
+  if (st.metric === 'rank') {
+    const field = fieldFor(st);
+    const b = rankBreaks();
+    return {
+      'fill-color': [
+        'case',
+        ['<', ['to-number', ['get', field]], 1], '#dad7c8',  // unranked
+        ['step', ['to-number', ['get', field]],
+          RAMP_RANK[0],
+          b[0], RAMP_RANK[1],
+          b[1], RAMP_RANK[2],
+          b[2], RAMP_RANK[3],
+          b[3], RAMP_RANK[4],
+        ]
+      ],
+      'fill-opacity': 0.82,
+    };
+  }
   const field = fieldFor(st);
   const breaks = BREAKS[st.cat][st.metric];
   const ramp = st.metric==='rate' ? RAMP_RATE : RAMP_RAW;
@@ -446,6 +528,26 @@ function initMap() {
     if (!map.getLayer('basemap_labels')) {
       map.addLayer({ id:'basemap_labels', type:'raster', source:'basemap_labels' });
     }
+    // Rank-number labels on each polygon (NTA only — at tract level there are too many).
+    map.addLayer({
+      id:'area-rank-label',
+      source:'area',
+      type:'symbol',
+      layout:{
+        'text-field': ['to-string', ['get', fieldFor({...state, metric:'rank'})]],
+        'text-font':['Open Sans Regular'],
+        'text-size':['interpolate',['linear'],['zoom'], 9,9, 11,11, 13,14],
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'visibility': (state.metric==='rank' && state.res==='nta') ? 'visible' : 'none',
+      },
+      paint:{
+        'text-color':'#1b1b1b',
+        'text-halo-color':'#ffffff',
+        'text-halo-width':1.6,
+      },
+      filter: ['>',['get',fieldFor({...state, metric:'rank'})], 0],
+    });
   } catch (e) {
     console.error('initMap addLayer failed:', e);
     setTimeout(initMap, 500);
@@ -469,10 +571,38 @@ function initMap() {
     const rate = +p['rate_'+cat+'_'+sk];
     const raw  = +p['raw_'+cat+'_'+sk];
     const peds = +p['peds_'+sk];
+    const rank = +p['rank_'+cat+'_'+sk];
+    const N    = curRes().geo.features.length;
     const hasRate = RATEABLE.has(sk);
-    const headline = state.metric==='rate' && hasRate
-      ? `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`
-      : `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
+    let headline;
+    if (state.metric === 'rank') {
+      headline = `${rank > 0 ? '#'+rank : '—'}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> of ${N}</span>`;
+    } else if (state.metric==='rate' && hasRate) {
+      headline = `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`;
+    } else {
+      headline = `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
+    }
+    // Risk per typical walk: rate is incidents per million walker-hours, so for a
+    // single walker over T minutes the expected incident count is rate * (T/60) / 1e6,
+    // i.e. "1 in N walks of T minutes" with N = 1 / (rate * T/60 / 1e6).
+    function walkRisk(rateVal, mins) {
+      if (!(rateVal > 0)) return null;
+      const expected = rateVal * (mins/60) / 1e6;
+      return Math.round(1/expected).toLocaleString();
+    }
+    const risk30 = hasRate && rate > 0 ? walkRisk(rate, 30) : null;
+    const riskLine = risk30
+      ? `<div class="row"><span>≈ 1 incident per N 30-min walks</span><b>${risk30}</b></div>`
+      : '';
+    // Crime mix: % violent vs % property of all displayed categories
+    const vio  = +p['raw_vio_'+sk];
+    const gla  = +p['raw_gla_'+sk];
+    const pla  = +p['raw_pla_'+sk];
+    const prop = gla + pla;
+    const mixTotal = vio + prop;
+    const mixLine = mixTotal > 0
+      ? `<div class="row"><span>Crime mix (violent vs property)</span><b>${Math.round(100*vio/mixTotal)}% / ${Math.round(100*prop/mixTotal)}%</b></div>`
+      : '';
     const breakdown = [
       ['Felony assault', +p['raw_asf_'+sk]],
       ['Robbery',        +p['raw_rob_'+sk]],
@@ -489,8 +619,11 @@ function initMap() {
        <div class="rl">${SLOT_LABEL[sk]||sk}</div>
        <div class="rv">${headline}</div>
        <hr/>
+       <div class="row"><span>Rank (this cat/slot)</span><b>${rank>0?'#'+rank+' of '+N:'—'}</b></div>
        <div class="row"><span>Pedestrians per hour (model)</span><b>${hasRate ? Math.round(peds).toLocaleString() : '—'}</b></div>
-       <div class="row"><span>Rate per M walker-hr (selected)</span><b>${(hasRate && rate>=0) ? rate.toFixed(2) : '—'}</b></div>
+       <div class="row"><span>Rate per M walker-hr</span><b>${(hasRate && rate>=0) ? rate.toFixed(2) : '—'}</b></div>
+       ${riskLine}
+       ${mixLine}
        ${noRate}
        <hr/>
        <div class="rl" style="margin-bottom:3px">In-slot counts (3 yr)</div>
@@ -517,16 +650,25 @@ function initMap() {
 }
 
 function apply() {
-  // If the current time-of-day slot has no walker model, force the metric to "raw"
-  // for the map paint (but keep the user's preference in state.metric for when they
-  // switch back to AM/MD/PM).
+  // If the user selected "rate" but the current time-of-day slot has no walker model,
+  // force the metric to "raw" for paint (state.metric still keeps the user's preference).
+  // Rank mode works in every slot — rank uses raw counts for EV/LN automatically.
   const hasRate = RATEABLE.has(slotKey(state));
-  const effState = hasRate ? state : { ...state, metric:'raw' };
+  const effState = (state.metric === 'rate' && !hasRate) ? { ...state, metric:'raw' } : state;
   if (map.getLayer('area-fill')) {
     const paint = buildFillPaint(effState);
     Object.entries(paint).forEach(([k,v]) => map.setPaintProperty('area-fill', k, v));
   }
-  // Show/hide the no-walker-model note
+  // Toggle rank-label visibility + update its field
+  if (map.getLayer('area-rank-label')) {
+    const showLabels = effState.metric==='rank' && state.res==='nta';
+    map.setLayoutProperty('area-rank-label','visibility', showLabels ? 'visible' : 'none');
+    if (showLabels) {
+      const rkField = fieldFor({...state, metric:'rank'});
+      map.setLayoutProperty('area-rank-label','text-field', ['to-string', ['get', rkField]]);
+      map.setFilter('area-rank-label', ['>', ['get', rkField], 0]);
+    }
+  }
   const note = document.getElementById('rateNote');
   note.style.display = (state.metric==='rate' && !hasRate) ? 'block' : 'none';
   drawLegend(effState);
@@ -534,10 +676,19 @@ function apply() {
 }
 
 function drawLegend(eff) {
-  const breaks = BREAKS[eff.cat][eff.metric];
-  const ramp = eff.metric==='rate' ? RAMP_RATE : RAMP_RAW;
   const sw = document.getElementById('legendSwatches');
   const tk = document.getElementById('legendTicks');
+  if (eff.metric === 'rank') {
+    sw.innerHTML = RAMP_RANK.map(c=>`<div class="sw" style="background:${c}"></div>`).join('');
+    const N = curRes().geo ? curRes().geo.features.length : 262;
+    tk.innerHTML = ['top 5%', '5–15%', '15–35%', '35–65%', 'bottom 35%']
+      .map(l=>`<span style="width:34px">${l}</span>`).join('');
+    document.getElementById('legendTitle').textContent =
+      'Rank by ' + CAT_LABEL[eff.cat] + ' (' + N + ' ' + (state.res==='nta'?'neighborhoods':'tracts') + ', rank 1 = highest)';
+    return;
+  }
+  const breaks = BREAKS[eff.cat][eff.metric];
+  const ramp = eff.metric==='rate' ? RAMP_RATE : RAMP_RAW;
   sw.innerHTML = ramp.map(c=>`<div class="sw" style="background:${c}"></div>`).join('');
   const labels = eff.metric==='rate'
     ? ['0', breaks[1].toFixed(2), breaks[2].toFixed(2), breaks[3].toFixed(2), breaks[4].toFixed(2), breaks[5].toFixed(2)+'+']
@@ -587,6 +738,113 @@ document.getElementById('resSeg').addEventListener('click', async e=>{
 // Set initial selection state (PM, Weekday)
 setSeg('todSeg','PM');
 drawLegend(state);
+
+// --- Scatter: per-resident rank vs per-walker rank ----------------------
+const BORO_COLOR = {
+  'Bronx':'#e7466d','Manhattan':'#ff7c53','Brooklyn':'#f9b945',
+  'Queens':'#217ebe','Staten Island':'#444',
+};
+(async function buildScatter(){
+  const svg = document.getElementById('scatter');
+  if (!svg) return;
+  let data;
+  try { data = await fetch('scatter_data.json').then(r=>r.json()); }
+  catch(e){ console.error('scatter fetch failed', e); return; }
+  const pts = data.points;
+  const N = pts.length;
+  const W = 720, H = 480, M = {l:60, r:20, t:20, b:50};
+  const innerW = W - M.l - M.r, innerH = H - M.t - M.b;
+  const x = r => M.l + ((r - 1) / (N - 1)) * innerW;
+  // y inverted: rank 1 (worst per walker) at top
+  const y = r => M.t + ((r - 1) / (N - 1)) * innerH;
+  const ns = 'http://www.w3.org/2000/svg';
+  function E(tag, attrs, text){
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // Plot area background
+  svg.appendChild(E('rect',{x:M.l,y:M.t,width:innerW,height:innerH,fill:'#fafaf7'}));
+  // Diagonal
+  svg.appendChild(E('line',{x1:x(1),y1:y(1),x2:x(N),y2:y(N),stroke:'#ccc',
+    'stroke-width':1,'stroke-dasharray':'4 4'}));
+  // Axes
+  svg.appendChild(E('line',{x1:M.l,y1:M.t+innerH,x2:M.l+innerW,y2:M.t+innerH,stroke:'#1b1b1b','stroke-width':1}));
+  svg.appendChild(E('line',{x1:M.l,y1:M.t,x2:M.l,y2:M.t+innerH,stroke:'#1b1b1b','stroke-width':1}));
+  // Tick + labels
+  function tickLabel(side, r, lbl){
+    if (side==='x'){
+      svg.appendChild(E('line',{x1:x(r),y1:M.t+innerH,x2:x(r),y2:M.t+innerH+5,stroke:'#1b1b1b'}));
+      svg.appendChild(E('text',{x:x(r),y:M.t+innerH+18,'text-anchor':'middle','font-size':10,fill:'#707175'}, lbl));
+    } else {
+      svg.appendChild(E('line',{x1:M.l-5,y1:y(r),x2:M.l,y2:y(r),stroke:'#1b1b1b'}));
+      svg.appendChild(E('text',{x:M.l-8,y:y(r)+3,'text-anchor':'end','font-size':10,fill:'#707175'}, lbl));
+    }
+  }
+  tickLabel('x', 1, 'rank 1 (worst)');
+  tickLabel('x', Math.round(N/2), 'rank '+Math.round(N/2));
+  tickLabel('x', N, 'rank '+N+' (best)');
+  tickLabel('y', 1, 'rank 1 (worst)');
+  tickLabel('y', Math.round(N/2), 'rank '+Math.round(N/2));
+  tickLabel('y', N, 'rank '+N+' (best)');
+  // Axis titles
+  svg.appendChild(E('text',{x:M.l+innerW/2,y:H-12,'text-anchor':'middle','font-size':12,'font-weight':700,fill:'#1b1b1b'}, 'Rank by felonies per resident (the standard map)'));
+  svg.appendChild(E('text',{x:18,y:M.t+innerH/2,'text-anchor':'middle','font-size':12,'font-weight':700,fill:'#1b1b1b',transform:`rotate(-90 18 ${M.t+innerH/2})`}, 'Rank by felonies per walker (this map)'));
+  // Diagonal label
+  svg.appendChild(E('text',{x:x(N*0.62)+10,y:y(N*0.62)-8,'font-size':10,fill:'#999','font-style':'italic'}, 'same rank either way'));
+
+  // Tooltip
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:absolute;background:#fff;border:1px solid #1b1b1b;padding:6px 9px;font-size:11px;line-height:1.3;pointer-events:none;display:none;z-index:30;box-shadow:0 3px 10px rgba(0,0,0,.1);border-radius:3px;';
+  svg.parentElement.style.position = 'relative';
+  svg.parentElement.appendChild(tip);
+
+  // Sort: most-shifted last so they paint on top
+  const sorted = pts.slice().sort((a,b)=> Math.abs(a.rank_shift) - Math.abs(b.rank_shift));
+  for (const p of sorted) {
+    const shift = Math.abs(p.rank_shift);
+    const r = 3 + Math.min(4, shift/30);
+    const c = E('circle', {
+      cx: x(p.rank_resident), cy: y(p.rank_walker), r,
+      fill: BORO_COLOR[p.boro] || '#666',
+      'fill-opacity': 0.78,
+      stroke: shift > 80 ? '#1b1b1b' : 'none',
+      'stroke-width': 0.7,
+    });
+    c.addEventListener('mousemove', ev=>{
+      const rect = svg.parentElement.getBoundingClientRect();
+      tip.style.left = (ev.clientX - rect.left + 12) + 'px';
+      tip.style.top  = (ev.clientY - rect.top + 12) + 'px';
+      tip.style.display = 'block';
+      tip.innerHTML = `<b>${p.name}</b><br/>${p.boro} · pop ${p.pop.toLocaleString()}<br/>
+        per-resident rank: <b>#${p.rank_resident}</b><br/>
+        per-walker rank: <b>#${p.rank_walker}</b><br/>
+        per-resident rate: ${p.per_resident}/1k/yr<br/>
+        per-walker rate: ${p.per_walker}/M walker-hr<br/>
+        <span style="color:${p.rank_shift<0?'#e7466d':'#217ebe'}">shift: ${p.rank_shift>0?'+'+p.rank_shift:p.rank_shift}</span>`;
+    });
+    c.addEventListener('mouseleave', ()=> tip.style.display='none');
+    svg.appendChild(c);
+  }
+
+  // Callouts: top 5 most negative shift (looks worse per resident) and top 3 most positive
+  const negShifted = pts.slice().sort((a,b)=> a.rank_shift - b.rank_shift).slice(0,5);
+  const posShifted = pts.slice().sort((a,b)=> b.rank_shift - a.rank_shift).slice(0,3);
+  for (const list of [negShifted, posShifted]) {
+    for (const p of list) {
+      const px = x(p.rank_resident), py = y(p.rank_walker);
+      const below = p.rank_shift < 0;
+      const tx = px + (below ? 8 : -8);
+      const ty = py + (below ? 14 : -8);
+      svg.appendChild(E('text',{
+        x:tx, y:ty,
+        'text-anchor': below ? 'start' : 'end',
+        'font-size': 10, 'font-weight': 700, fill:'#1b1b1b',
+      }, p.name.split('-')[0].split(',')[0]));
+    }
+  }
+})();
 
 // Fire data load as soon as the style spec is parsed — don't wait for all basemap tiles.
 let _loaded = false;
