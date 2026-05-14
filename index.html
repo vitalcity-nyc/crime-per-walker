@@ -32,7 +32,7 @@
   .ctrls .grp{display:flex;align-items:center;gap:6px;}
   .ctrls .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
     font-weight:700;color:var(--charcoal);}
-  .seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;
+  .seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:3px;
     overflow:hidden;}
   .seg button{border:0;background:#fff;padding:5px 9px;
     font:inherit;font-size:11px;font-weight:700;color:var(--ink);
@@ -143,16 +143,23 @@
     population is tiny relative to the foot traffic. This map uses an MIT pedestrian-flow
     model as the denominator instead — <b>outdoor incidents per million pedestrian-hours</b>
     on the same two-hour window that the model estimates. Three years of NYPD data
-    (2022–2024), 197 New York City neighborhoods, six time slots, two crime categories
-    (felonies and misdemeanor assaults) that can be viewed separately or combined.</p>
+    (2022–2024), 197 New York City neighborhoods, six time slots, and seven crime
+    categories — robbery, felony assault, grand larceny, misdemeanor assault,
+    petit larceny, a violent-crime composite, and all felonies — viewable separately
+    or summed.</p>
 
   <div class="ctrls">
     <div class="grp">
       <span class="lbl">Crime</span>
       <div class="seg" id="catSeg">
         <button data-v="fel" class="on">Felonies</button>
+        <button data-v="vio">Violent</button>
+        <button data-v="rob">Robbery</button>
+        <button data-v="asf">Felony asslt</button>
+        <button data-v="gla">Grand larceny</button>
         <button data-v="mas">Misd. assault</button>
-        <button data-v="comb">Combined</button>
+        <button data-v="pla">Petit larceny</button>
+        <button data-v="comb">All shown</button>
       </div>
     </div>
     <div class="grp">
@@ -244,14 +251,24 @@ const RAMP_RAW  = ['#f3efe1','#dceaf2','#9fc8e0','#5e9fc7','#296aa3','#1a3b6e'];
 
 // Per-category bucket edges (chosen from each category's empirical distribution).
 const BREAKS = {
-  fel:  { rate: [0, 0.10, 0.20, 0.35, 0.55, 0.80], raw: [0, 50, 150, 300, 600, 1000] },
-  mas:  { rate: [0, 0.03, 0.06, 0.10, 0.15, 0.20], raw: [0, 10, 25, 50, 100, 150] },
-  comb: { rate: [0, 0.15, 0.30, 0.50, 0.80, 1.10], raw: [0, 60, 175, 350, 700, 1100] },
+  fel:  { rate: [0, 0.10, 0.20, 0.35, 0.55, 0.80],  raw: [0, 50, 150, 300, 600, 1000] },
+  vio:  { rate: [0, 0.05, 0.10, 0.18, 0.28, 0.38],  raw: [0, 25, 50, 90, 150, 220] },
+  rob:  { rate: [0, 0.015, 0.03, 0.05, 0.08, 0.10], raw: [0, 8, 18, 30, 45, 60] },
+  asf:  { rate: [0, 0.015, 0.03, 0.05, 0.08, 0.10], raw: [0, 6, 15, 25, 40, 55] },
+  gla:  { rate: [0, 0.03, 0.06, 0.10, 0.13, 0.17],  raw: [0, 15, 35, 60, 90, 130] },
+  mas:  { rate: [0, 0.03, 0.06, 0.10, 0.15, 0.20],  raw: [0, 10, 25, 50, 100, 150] },
+  pla:  { rate: [0, 0.04, 0.08, 0.13, 0.20, 0.27],  raw: [0, 15, 35, 60, 100, 140] },
+  comb: { rate: [0, 0.20, 0.40, 0.70, 1.00, 1.30],  raw: [0, 80, 200, 400, 800, 1300] },
 };
 const CAT_LABEL = {
   fel:  'felonies',
+  vio:  'violent crimes',
+  rob:  'robberies',
+  asf:  'felony assaults',
+  gla:  'grand larcenies',
   mas:  'misd. assaults',
-  comb: 'felonies + misd. assaults',
+  pla:  'petit larcenies',
+  comb: 'felonies + misd. assault + petit larceny',
 };
 
 let state = { cat:'fel', metric:'rate', day:'wkdy', tod:'PM' };
@@ -273,7 +290,7 @@ async function load() {
     for (const slot of ['wkdyAM','wkdyMD','wkdyPM','wkndAM','wkndMD','wkndPM']) {
       const s = row[slot] || {};
       f.properties['peds_'+slot] = s.peds_per_hr || 0;
-      for (const cat of ['fel','mas','comb']) {
+      for (const cat of ['fel','vio','rob','asf','gla','mas','pla','comb']) {
         const rate = s[cat+'_rate'];
         f.properties['rate_'+cat+'_'+slot] = (rate == null) ? -1 : rate;
         f.properties['raw_'+cat+'_'+slot] = s[cat] || 0;
@@ -385,24 +402,31 @@ function initMap() {
     const rate = +p['rate_'+cat+'_'+sk];
     const raw  = +p['raw_'+cat+'_'+sk];
     const peds = +p['peds_'+sk];
-    const fel  = +p['raw_fel_'+sk];
-    const mas  = +p['raw_mas_'+sk];
     const slotLabel = ({wkdyAM:'Weekday AM (8–10a)',wkdyMD:'Weekday midday (12–2p)',
       wkdyPM:'Weekday PM (5–7p)',wkndAM:'Weekend AM (8–10a)',
       wkndMD:'Weekend midday (12–2p)',wkndPM:'Weekend PM (5–7p)'})[sk];
     const headline = state.metric==='rate'
       ? `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`
       : `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
+    // Show a small breakdown of all narrow categories in this slot
+    const breakdown = [
+      ['Felony assault', +p['raw_asf_'+sk]],
+      ['Robbery',        +p['raw_rob_'+sk]],
+      ['Grand larceny',  +p['raw_gla_'+sk]],
+      ['Misd. assault',  +p['raw_mas_'+sk]],
+      ['Petit larceny',  +p['raw_pla_'+sk]],
+    ].map(([k,v]) => `<div class="row"><span>${k}</span><b>${(v||0).toLocaleString()}</b></div>`).join('');
     readout.innerHTML =
       `<div class="rn">${p.name}</div>
        <div class="rb">${p.boro} · ${CAT_LABEL[cat]}</div>
        <div class="rl">${slotLabel}</div>
        <div class="rv">${headline}</div>
        <hr/>
-       <div class="row"><span>Felonies (3 yr, this slot)</span><b>${fel.toLocaleString()}</b></div>
-       <div class="row"><span>Misd. assaults (3 yr, this slot)</span><b>${mas.toLocaleString()}</b></div>
        <div class="row"><span>Pedestrians per hour (model)</span><b>${Math.round(peds).toLocaleString()}</b></div>
-       <div class="row"><span>Rate per M walker-hr (selected)</span><b>${rate<0?'—':rate.toFixed(2)}</b></div>`;
+       <div class="row"><span>Rate per M walker-hr (selected)</span><b>${rate<0?'—':rate.toFixed(2)}</b></div>
+       <hr/>
+       <div class="rl" style="margin-bottom:3px">In-slot counts (3 yr)</div>
+       ${breakdown}`;
   }
   map.on('mousemove','nta-fill',(e)=>{
     const f = e.features && e.features[0]; if (!f) return;

@@ -19,7 +19,7 @@ SLOT_HOURS = {
 }
 PROP_MAP = {'wkdyAM':'am','wkdyMD':'md','wkdyPM':'pm',
             'wkndAM':'wam','wkndMD':'wmd','wkndPM':'wpm'}
-CATS = ['fel','mas','comb']
+CATS = ['fel','mas','rob','asf','gla','pla','vio','comb']
 
 ped = json.load(open('/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/ped_hours_by_nta.json'))
 crimes = json.load(open('/Users/joshgreenman/Experiments/nyc-data/crime-per-walker/crimes_by_nta.json'))['data']
