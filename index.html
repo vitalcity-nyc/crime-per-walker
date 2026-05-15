@@ -583,6 +583,8 @@ function initMap() {
     const raw  = +p['raw_'+cat+'_'+sk];
     const peds = +p['peds_'+sk];
     const hasRate = RATEABLE.has(sk);
+    const rank = +p['rank_'+cat+'_'+sk];
+    const N = curRes().geo.features.length;
     const headline = (state.metric==='rate' && hasRate)
       ? `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`
       : `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
@@ -641,6 +643,7 @@ function initMap() {
        <div class="rl">${SLOT_LABEL[sk]||sk}</div>
        <div class="rv">${headline}</div>
        <hr/>
+       <div class="row"><span>Rank (this slot)</span><b>${rank>0 ? '#'+rank+' of '+N : '—'}</b></div>
        <div class="row"><span>Pedestrians per hour (model)</span><b>${hasRate ? Math.round(peds).toLocaleString() : '—'}</b></div>
        <div class="row"><span>Rate per M walker-hr</span><b>${(hasRate && rate>=0) ? rate.toFixed(2) : '—'}</b></div>
        ${riskLine}
