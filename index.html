@@ -186,7 +186,6 @@
       <div class="seg" id="metSeg">
         <button data-v="rate" class="on">Per walker-hour</button>
         <button data-v="raw">Raw count</button>
-        <button data-v="rank">Rank</button>
       </div>
     </div>
     <div class="grp">
@@ -560,26 +559,6 @@ function initMap() {
     if (!map.getLayer('basemap_labels')) {
       map.addLayer({ id:'basemap_labels', type:'raster', source:'basemap_labels' });
     }
-    // Rank-number labels on each polygon (NTA only — at tract level there are too many).
-    map.addLayer({
-      id:'area-rank-label',
-      source:'area',
-      type:'symbol',
-      layout:{
-        'text-field': ['to-string', ['get', fieldFor({...state, metric:'rank'})]],
-        'text-font':['Open Sans Regular'],
-        'text-size':['interpolate',['linear'],['zoom'], 9,9, 11,11, 13,14],
-        'text-allow-overlap': false,
-        'text-ignore-placement': false,
-        'visibility': (state.metric==='rank' && state.res==='nta') ? 'visible' : 'none',
-      },
-      paint:{
-        'text-color':'#1b1b1b',
-        'text-halo-color':'#ffffff',
-        'text-halo-width':1.6,
-      },
-      filter: ['>',['get',fieldFor({...state, metric:'rank'})], 0],
-    });
   } catch (e) {
     console.error('initMap addLayer failed:', e);
     setTimeout(initMap, 500);
@@ -603,17 +582,10 @@ function initMap() {
     const rate = +p['rate_'+cat+'_'+sk];
     const raw  = +p['raw_'+cat+'_'+sk];
     const peds = +p['peds_'+sk];
-    const rank = +p['rank_'+cat+'_'+sk];
-    const N    = curRes().geo.features.length;
     const hasRate = RATEABLE.has(sk);
-    let headline;
-    if (state.metric === 'rank') {
-      headline = `${rank > 0 ? '#'+rank : '—'}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> of ${N}</span>`;
-    } else if (state.metric==='rate' && hasRate) {
-      headline = `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`;
-    } else {
-      headline = `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
-    }
+    const headline = (state.metric==='rate' && hasRate)
+      ? `${rate < 0 ? '—' : rate.toFixed(2)}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> per M walker-hr</span>`
+      : `${raw.toLocaleString()}<span style="font-size:11px;color:var(--charcoal);font-weight:700"> incidents</span>`;
     // Risk per typical walk: rate is incidents per million walker-hours, so for a
     // single walker over T minutes the expected incident count is rate * (T/60) / 1e6,
     // i.e. "1 in N walks of T minutes" with N = 1 / (rate * T/60 / 1e6).
@@ -669,7 +641,6 @@ function initMap() {
        <div class="rl">${SLOT_LABEL[sk]||sk}</div>
        <div class="rv">${headline}</div>
        <hr/>
-       <div class="row"><span>Rank (this cat/slot)</span><b>${rank>0?'#'+rank+' of '+N:'—'}</b></div>
        <div class="row"><span>Pedestrians per hour (model)</span><b>${hasRate ? Math.round(peds).toLocaleString() : '—'}</b></div>
        <div class="row"><span>Rate per M walker-hr</span><b>${(hasRate && rate>=0) ? rate.toFixed(2) : '—'}</b></div>
        ${riskLine}
@@ -711,17 +682,6 @@ function apply() {
     Object.entries(paint).forEach(([k,v]) => map.setPaintProperty('area-fill', k, v));
   }
   // Toggle rank-label visibility + update its field
-  if (map.getLayer('area-rank-label')) {
-    try {
-      const showLabels = effState.metric==='rank' && state.res==='nta';
-      map.setLayoutProperty('area-rank-label','visibility', showLabels ? 'visible' : 'none');
-      if (showLabels) {
-        const rkField = fieldFor({...state, metric:'rank'});
-        map.setLayoutProperty('area-rank-label','text-field', ['to-string', ['get', rkField]]);
-        map.setFilter('area-rank-label', ['>', ['get', rkField], 0]);
-      }
-    } catch (e) { console.warn('rank-label update failed', e); }
-  }
   const note = document.getElementById('rateNote');
   note.style.display = (state.metric==='rate' && !hasRate) ? 'block' : 'none';
   drawLegend(effState);
